@@ -341,7 +341,7 @@ rule normalize_vcf:
     shell:
         """
         bcftools norm \
-        -m -any \
+        -m + \
         -f {input.ref} \
         -Oz \
         -o {output.vcf} \
