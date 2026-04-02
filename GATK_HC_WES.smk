@@ -23,18 +23,16 @@ rule haplotypecaller:
         bai = f"{config['bam_dir']}/{{sample}}.bqsr.bai",
         ref = config['ref']
     output:
-        vcf = f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.vcf.gz",
-        tbi = f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.vcf.gz.tbi",
-        haplo_bam = f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.bam",
-        haplo_bai = f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.bai"
+        vcf = f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.g.vcf.gz",
+        tbi = f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.g.vcf.gz.tbi"
     benchmark:
         f"{config['results_dir']}/benchmarks/haplotypecaller/{{sample}}.tsv"
     log:
-        f"{config['results_dir']}/logs/{{sample}}.haplotypecaller.log"
+        f"{config['results_dir']}/logs/haplotypecaller/{{sample}}.haplotypecaller.log"
     resources:
         mem_mb = 32768,
         runtime = 17280
-    threads: 6
+    threads: 2
     envmodules:
         "bbc2/gatk/gatk-4.5.0.0"
     conda:
@@ -48,8 +46,6 @@ rule haplotypecaller:
         -I {input.bam} \
         -L {config[regions][gatk_intervals]} \
         -O {output.vcf} \
-        --bam-output {output.haplo_bam} \
-        --create-output-bam-index true \
         --ERC GVCF \
         --dont-use-soft-clipped-bases true \
         --standard-min-confidence-threshold-for-calling 20 \
@@ -57,15 +53,15 @@ rule haplotypecaller:
         --sample-ploidy 2 \
         2> {log}
 
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
 
 #joint genotyping
 rule genomicsdb:
     input:
-        gvcfs = expand(f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.vcf.gz",
+        gvcfs = expand(f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.g.vcf.gz",
         sample=SAMPLES),
-        tbis = expand(f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.vcf.gz.tbi",
+        tbis = expand(f"{config['results_dir']}/haplotypecaller/{{sample}}/{{sample}}.hc.g.vcf.gz.tbi",
         sample=SAMPLES)
     output:
         db = directory(f"{config['results_dir']}/jointcalling/genomicsdb")
@@ -79,7 +75,7 @@ rule genomicsdb:
     params:
         sample_map = f"{config['results_dir']}/sample_map.txt",
         sample_map_lines = lambda wildcards: "\n".join(
-            f"{s}\t{config['results_dir']}/haplotypecaller/{s}/{s}.hc.vcf.gz"
+            f"{s}\t{config['results_dir']}/haplotypecaller/{s}/{s}.hc.g.vcf.gz"
             for s in SAMPLES)
     envmodules:
         "bbc2/gatk/gatk-4.5.0.0"
@@ -132,7 +128,7 @@ rule joint_genotyping:
         -O {output.vcf} \
         2> {log}
        
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
 #vqsr for gatk
 rule vqsr_snp:
@@ -208,7 +204,7 @@ rule apply_vqsr_snp:
         --truth-sensitivity-filter-level {params.ts_filter_level} \
         2> {log}
 
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
 #vqsr for indels
 rule vqsr_indel:
@@ -289,7 +285,7 @@ rule apply_vqsr_indel:
         --truth-sensitivity-filter-level {params.ts_filter_level} \
         2> {log}
 
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
 ###this rule will catch sites with a missing filter field i.e. sites that VQSR could not model, so I will use hard filters for them
 rule gatk_hard_filter:
@@ -319,9 +315,9 @@ rule gatk_hard_filter:
             -O z -o {output.vcf} \
             2> {log}
 
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
-#norm vcfs
+#norm & sort vcfs
 rule normalize_vcf:
     input:
         vcf = rules.gatk_hard_filter.output.vcf,
@@ -334,20 +330,24 @@ rule normalize_vcf:
     log:
         f"{config['results_dir']}/logs/normalized_vcf.log"
     resources:
-        mem_mb = 16384,
-        runtime = 240
+        mem_mb = 24576,
+        runtime = 360
     conda:
         "envs/vcf_utils.yml"
     shell:
         """
         bcftools norm \
-        -m + \
-        -f {input.ref} \
-        -Oz \
-        -o {output.vcf} \
-        {input.vcf} 2> {log}
+            -m + \
+            -f {input.ref} \
+            -Ou \
+            {input.vcf} 2> {log} | \
+        bcftools sort \
+            --temp-dir $TMPDIR \
+            -Oz \
+            -o {output.vcf} \
+            2>> {log}
 
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
 rule fill_tags:
     input:
@@ -372,7 +372,7 @@ rule fill_tags:
         -o {output.vcf} \
         -- -t VAF,AF,AC,AN,F_MISSING,MAF 2> {log}
 
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
 #want to filter based on depth >=10 and VAF >=0.3, if they do not meet these thresholds they will be assigned as missing
 rule genotype_filter:
@@ -407,7 +407,7 @@ rule genotype_filter:
             -O z -o {output.vcf} \
             2> {log}
 
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
 #vep annotation
 rule annotate_gatk_vcf:
@@ -446,7 +446,7 @@ rule annotate_gatk_vcf:
         --stats_file {output.html} \
         2> {log}
 
-        tabix -p vcf {output.vcf} 2>> {log}
+        tabix -f -p vcf {output.vcf} 2>> {log}
         """
 
 #summary_stats
