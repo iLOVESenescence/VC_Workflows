@@ -70,7 +70,7 @@ rule genomicsdb:
     log:
         f"{config['results_dir']}/logs/genomicsdb.log"
     resources:
-        mem_mb = 8192,
+        mem_mb = 92160,
         runtime = 4320
     params:
         sample_map = f"{config['results_dir']}/sample_map.txt",
@@ -90,12 +90,13 @@ rule genomicsdb:
 EOF
 
         #genomicsdb better for joint genotyping of large cohort per GATK best practices
-        gatk --java-options "-Xms2g -Xmx6g -Djava.io.tmpdir=./tmp" \
+        gatk --java-options "-Xms8g -Xmx85g -Djava.io.tmpdir=./tmp" \
         GenomicsDBImport \
         --sample-name-map {params.sample_map} \
         --genomicsdb-workspace-path {output.db} \
         -L {config[regions][gatk_intervals]} \
-        --reader-threads 2 \
+        --merge-input-intervals \
+        --reader-threads 4 \
         2> {log}
         """
 rule joint_genotyping:
@@ -337,12 +338,11 @@ rule normalize_vcf:
     shell:
         """
         bcftools norm \
-            -m + \
+            -m - \
             -f {input.ref} \
             -Ou \
             {input.vcf} 2> {log} | \
         bcftools sort \
-            --temp-dir $TMPDIR \
             -Oz \
             -o {output.vcf} \
             2>> {log}
