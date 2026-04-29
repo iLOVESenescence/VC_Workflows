@@ -1,7 +1,7 @@
 #this is a germline variant calling pipeline from whole-exome sequencing data using Google DeepVariant
 
 workflow.name = "Germline Variant Calling in Whole-Exome Sequencing"
-workflow.description = "Whole exome sequencing variant calling and annotation for Multiple Myelmoma"
+workflow.description = "Whole exome sequencing variant calling and annotation"
 workflow.author = "Qualia Hooker"
 workflow.version = "1.0"
 
@@ -37,7 +37,7 @@ rule deepvariant_vc:
         "bbc2/DeepVariant/deepvariant-1.5.0"
     shell:
         """
-        singularity exec --bind /varidata/research/projects/triche/Lia/ $DEEPVAR /opt/deepvariant/bin/run-deepvariant \
+        singularity exec --bind /varidata/research/ $DEEPVAR /opt/deepvariant/bin/run-deepvariant \
         --model_type={params.model_type} \
         --ref={input.ref} \
         --reads={input.bam} \
