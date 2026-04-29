@@ -288,40 +288,10 @@ rule apply_vqsr_indel:
 
         tabix -f -p vcf {output.vcf} 2>> {log}
         """
-###this rule will catch sites with a missing filter field i.e. sites that VQSR could not model, so I will use hard filters for them
-rule gatk_hard_filter:
-    input:
-        vcf = rules.apply_vqsr_indel.output.vcf
-    output:
-        vcf = f"{config['results_dir']}/vqsr/cohort.vqsr.hardfilter.vcf.gz",
-        tbi = f"{config['results_dir']}/vqsr/cohort.vqsr.hardfilter.vcf.gz.tbi"
-    benchmark:
-        f"{config['results_dir']}/benchmarks/hard_filter/hard_filter_fallback.tsv"
-    log:
-        f"{config['results_dir']}/logs/hard_filter_fallback.log"
-    resources:
-        mem_mb  = 16384,
-        runtime = 240
-    conda:
-        "envs/vcf_utils.yml"
-    shell:
-        """
-        bcftools filter \
-            -e 'FILTER="." && TYPE="snp" && (QD < 2.0 || FS > 60.0 || MQ < 40.0)' \
-            -s "HardFilter_SNP" \
-            -O u {input.vcf} | \
-        bcftools filter \
-            -e 'FILTER="." && TYPE="indel" && (QD < 2.0 || FS > 200.0 || ReadPosRankSum < -20.0)' \
-            -s "HardFilter_INDEL" \
-            -O z -o {output.vcf} \
-            2> {log}
-
-        tabix -f -p vcf {output.vcf} 2>> {log}
-        """
 #norm & sort vcfs
 rule normalize_vcf:
     input:
-        vcf = rules.gatk_hard_filter.output.vcf,
+        vcf = rules.apply_vqsr_indel.output.vcf,
         ref = config['ref']
     output:
         vcf= f"{config['results_dir']}/filtered/cohort.vqsr.norm.vcf.gz",
@@ -374,7 +344,7 @@ rule fill_tags:
 
         tabix -f -p vcf {output.vcf} 2>> {log}
         """
-#want to filter based on depth >=10 and VAF >=0.3, if they do not meet these thresholds they will be assigned as missing
+#want to filter based on depth >=10, if they do not meet these thresholds they will be assigned as missing
 rule genotype_filter:
     input:
         vcf = rules.fill_tags.output.vcf
@@ -389,18 +359,20 @@ rule genotype_filter:
         mem_mb  = 16384,
         runtime = 240
     params:
-        min_dp  = 10,
-        min_vaf = 0.3
+        min_dp  = 10
     conda:
         "envs/vcf_utils.yml"
     shell:
         """
-        #set genotypes to missing if DP < 10 or VAF < 0.3
+        #set genotypes to missing if DP < 10
         bcftools filter \
             -S . \
-            -e 'FORMAT/DP < {params.min_dp} | FORMAT/VAF < {params.min_vaf}' \
+            -e 'FORMAT/DP < {params.min_dp} \
             -O u {input.vcf} | \
-
+        #recal AC/AN after filtering genotypes
+        bcftools +fill-tags \
+        -O u \
+        -- -t AC,AN 2>> {log} | \
         #drop sites where all samples are now missing
         bcftools view \
             -e 'AC=0' \
