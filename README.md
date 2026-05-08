@@ -2,7 +2,7 @@
 Automated variant calling pipelines for whole-exome sequencing (WES) data using GATK, DeepVariant, and other callers. Designed for large cohorts with best-practice quality filtering and annotation.
 
 ## Overview
-Snakemake workflows for reproducible genomic analyses of large cohort data designed to be executed on HPC. It makes use of conda environments for specific tools for versioning.
+Snakemake workflows for reproducible genomic analyses of large cohort data designed to be executed on HPC. It makes use of conda environments for versioning of specific tools.
 
 ## Pipelines
 
